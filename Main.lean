@@ -17,6 +17,7 @@ structure Context where
   theoremNames : Array Lean.Name
   definitionNames : Array Lean.Name
   legalAxioms : Array Lean.Name
+  definitionAllowedValues : Std.HashMap Lean.Name (Array Lean.Name)
   leanPrefix : System.FilePath
   gitLocation : System.FilePath
   enableNanoda : Bool
@@ -61,6 +62,10 @@ def getGitLocation : M System.FilePath := do return (← read).gitLocation
 
 @[inline]
 def getNanodaEnabled : M Bool := do return (← read).enableNanoda
+
+@[inline]
+def getDefinitionAllowedValues : M (Std.HashMap Lean.Name (Array Lean.Name)) := do
+  return (← read).definitionAllowedValues
 
 def queryGitLocation : IO System.FilePath := do
   let out ← IO.Process.run {
@@ -249,6 +254,7 @@ def verifyMatch (challengeExport : String) (solutionExport : String) :
   let definitionNames ← getDefinitionNames
   let targets := (← getTheoremNames) ++ (← getLegalAxioms)
   IO.ofExcept <| Comparator.compareAt challenge solution targets definitionNames (← primitiveTargets)
+    (← getDefinitionAllowedValues)
   IO.ofExcept <| Comparator.checkAxioms solution theoremNames definitionNames (← getLegalAxioms)
   if ← getNanodaEnabled then
     runNanoda solutionExport
@@ -270,11 +276,19 @@ def compareIt : M Unit := do
 
   IO.println "Your solution is okay!"
 
+/-- Constraints on a definition hole's value.
+Used to restrict e.g. `Prop`-valued answers to `True`/`False`. -/
+structure DefinitionConstraint where
+  name : String
+  allowed_values : Array String
+  deriving Lean.FromJson, Lean.ToJson, Repr
+
 structure Config where
   challenge_module : String
   solution_module : String
   theorem_names : Array String
   definition_names : Option (Array String) := none
+  definition_constraints : Option (Array DefinitionConstraint) := none
   permitted_axioms : Array String
   enable_nanoda : Bool
   deriving Lean.FromJson, Lean.ToJson, Repr
@@ -286,6 +300,9 @@ def M.run (x : M α) (cfg : Config) : IO α := do
   let whichLean4Export := (← IO.getEnv "COMPARATOR_LEAN4EXPORT").getD "lean4export"
   let whichLandrun := (← IO.getEnv "COMPARATOR_LANDRUN").getD "landrun"
   let whichNanoda := (← IO.getEnv "COMPARATOR_NANODA").getD "nanoda_bin"
+  let definitionAllowedValues : Std.HashMap Lean.Name (Array Lean.Name) :=
+    (cfg.definition_constraints.getD #[]).foldl (init := {}) fun acc c =>
+      acc.insert c.name.toName (c.allowed_values.map String.toName)
   ReaderT.run x {
     projectDir := cwd
     challengeModule := cfg.challenge_module.toName,
@@ -293,6 +310,7 @@ def M.run (x : M α) (cfg : Config) : IO α := do
     theoremNames := cfg.theorem_names.map String.toName,
     definitionNames := cfg.definition_names.getD #[] |>.map String.toName,
     legalAxioms := cfg.permitted_axioms.map String.toName,
+    definitionAllowedValues,
     leanPrefix := leanPrefix,
     gitLocation := gitLocation,
     enableNanoda := cfg.enable_nanoda,

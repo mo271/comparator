@@ -62,8 +62,22 @@ def definitionHoleMatches (challengeHole solutionHole : Lean.DefinitionVal) : Bo
   challengeHole.toConstantVal == solutionHole.toConstantVal
     && challengeHole.safety == solutionHole.safety
 
+/-- Check that a definition's value is one of the allowed constant expressions.
+For example, for `Prop`-valued answer definitions, `allowed` would be `#[`True, `False]`,
+ensuring the solution is syntactically `True` or `False` rather than some complex proposition. -/
+def checkDefinitionValue (target : Lean.Name) (value : Lean.Expr)
+    (allowed : Array Lean.Name) : Except String Unit := do
+  match value with
+  | .const name [] =>
+    if !allowed.contains name then
+      throw s!"Definition '{target}' value must be one of {allowed}, got '{name}'"
+  | _ =>
+    throw s!"Definition '{target}' must be a simple constant (one of {allowed}), got '{value}'"
+
 def compareAt (challenge solution : Export.ExportedEnv) (theoremTargets : Array Lean.Name)
-    (definitionTargets : Array Lean.Name) (primitive : Array Lean.Name) : Except String Unit := do
+    (definitionTargets : Array Lean.Name) (primitive : Array Lean.Name)
+    (definitionAllowedValues : Std.HashMap Lean.Name (Array Lean.Name) := {})
+    : Except String Unit := do
   let mut worklist := primitive
 
   for target in theoremTargets do
@@ -97,7 +111,10 @@ def compareAt (challenge solution : Export.ExportedEnv) (theoremTargets : Array 
       | throw s!"Solution constant is not a definition: '{target}'"
 
     if !definitionHoleMatches challengeConst solutionConst then
-      throw s!"Const does not match between challenge and target '{target}'"
+      throw s!"Const does not match between challenge and solution: '{target}'"
+
+    if let some allowed := definitionAllowedValues[target]? then
+      checkDefinitionValue target solutionConst.value allowed
 
     worklist := worklist.push solutionConst.name
 
