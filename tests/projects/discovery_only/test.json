@@ -1,0 +1,9 @@
+{
+	"exit_code": 0,
+	"expected_output": [
+		"Exporting #[comm",
+		"Running Lean default kernel on solution",
+		"Lean default kernel accepts the solution",
+		"Your solution is okay!"
+	]
+}

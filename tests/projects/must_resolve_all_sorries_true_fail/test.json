@@ -1,0 +1,7 @@
+{
+	"exit_code": 1,
+	"expected_output": [
+		"Some verification targets failed:",
+		"- assoc: (some Comparator.CheckFailure.axioms)"
+	]
+}
