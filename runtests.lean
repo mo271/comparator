@@ -84,7 +84,7 @@ def readTestConfig (configPath : FilePath) : IO TestConfig := do
     | .ok cfg => pure cfg
 
 def getTempDir : IO FilePath := do
-  return "/tmp" / s!"lean_test_{← IO.rand 0 999999}"
+  return "tests" / "tmp" / s!"lean_test_{← IO.rand 0 999999}"
 
 def runTestProject (projectPath : FilePath) (projectName : String) (testsDir : FilePath)
     (comparatorPath : FilePath) : IO TestResult := do
