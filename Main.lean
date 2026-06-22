@@ -528,6 +528,9 @@ def M.run (x : M α) (cfg : Config) : IO α := do
   let cwd ← IO.Process.getCurrentDir
   let leanPrefix ← queryLeanPrefix cwd
   let gitLocation ← queryGitLocation
+  let whichLean4Export := (← IO.getEnv "COMPARATOR_LEAN4EXPORT").getD "lean4export"
+  let whichLandrun := (← IO.getEnv "COMPARATOR_LANDRUN").getD "landrun"
+  let whichNanoda := (← IO.getEnv "COMPARATOR_NANODA").getD "nanoda_bin"
   ReaderT.run x {
     projectDir := cwd
     challengeModule := cfg.challenge_module.toName,
