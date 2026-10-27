@@ -30,7 +30,7 @@ writing out the same theorem but with a proper proof attached.
 The following optional configuration fields control target selection and reporting:
 - `definition_names`: definitions that the solution must fill in.
 - `allow_disproofs`: when `true`, a theorem target `foo` may instead be solved by a theorem named
-  `foo.disproof` whose type is definitionally equal to an instance of the target type implying `False`.
+  `foo.disproof` of type `TargetTypeInstance → False` or `¬ TargetTypeInstance` (see [Disproofs](#disproofs)).
 - `must_resolve_all_sorries`: defaults to `true`. When `false`, failed theorem targets are reported as
   warnings and a submission is accepted if at least one theorem target succeeds. Definition targets
   remain mandatory.
@@ -205,11 +205,15 @@ suffix:
 theorem foo.disproof (h : TargetType) : False := by
   ...
 ```
-Equivalently, the disproof may have type `¬ TargetType`. Comparator accepts the disproof when its type
-is definitionally equal to `TargetTypeInstance → False`.
-To obtain `TargetType`, run `#check @target` and copy the complete type after the colon into the `h` binder.
+Equivalently, the disproof may have type `¬ TargetType`. Comparator checks that `TargetType`
+syntactically matches an instance of the target theorem's type (up to binder names/annotations and
+compiler-generated internal auxiliary constants such as `_proof_N` and `match_N`, which are paired
+when their theorem types or definition types and bodies match).
+To obtain `TargetType`, run `#check @target` and copy the complete type after the colon into the `h` binder,
+being careful not to introduce custom typeclass instances before `foo.disproof` that would change
+synthesized instances (e.g., replacing `Classical.propDecidable`).
 
-`TargetTypeInstance` may instantiate the target theorem's universe parameters. This models the
+`TargetType` may instantiate the target theorem's universe parameters. This models the
 existential universe choice needed to refute a theorem that claims to hold polymorphically at every
 universe level.
 
