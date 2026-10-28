@@ -47,3 +47,20 @@ theorem direct_proof_helper_matcher (p : Bool × Bool) :
     (let (a, b) := p; a == b) = (p.1 == p.2) := by
   cases p
   rfl
+
+-- 7. Disproof referencing a helper whose safe internal `.defnInfo` has `d.all != [d.name]`
+mutual
+  def dualAux.match_1 : Nat → Nat
+    | 0 => 0
+    | n + 1 => dualAux.match_2 n
+  def dualAux.match_2 : Nat → Nat
+    | 0 => 1
+    | n + 1 => dualAux.match_1 n
+end
+
+def useDualAux (n : Nat) : Nat := dualAux.match_1 n
+
+theorem mutual_all_aux_disproof.disproof
+    (h : ∀ (n : Nat), useDualAux n = 1) : False := by
+  have := h 0
+  contradiction
