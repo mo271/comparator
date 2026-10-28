@@ -118,10 +118,7 @@ def runTestProject (projectPath : FilePath) (projectName : String) (repoDir : Fi
 
     createAdditionalFiles tempDir
 
-    let projectDir ← IO.FS.realPath repoDir
     IO.FS.createDirAll (tempDir / ".lake")
-    let _ ← runCommandInDir tempDir "ln" #["-sf", (projectDir / ".lake" / "packages").toString, (tempDir / ".lake" / "packages").toString]
-
     if (← IO.FS.readFile (tempDir / "lakefile.toml")).contains "mathlib" then
       let (updateExit, updateOut) ← runCommandInDir tempDir "lake" #["update"]
       if updateExit != 0 then
