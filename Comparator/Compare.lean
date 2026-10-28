@@ -67,8 +67,12 @@ partial def collectChalNonAux (defTargets : Std.HashSet Name) (chal : Export.Exp
       match chal.constMap[n]? with
       | some (.thmInfo c) => collectChalNonAux defTargets chal c.type visitedAux
       | some (.defnInfo d) =>
-        let visitedAux ← collectChalNonAux defTargets chal d.type visitedAux
-        collectChalNonAux defTargets chal d.value visitedAux
+        if d.safety == .safe then
+          let visitedAux ← collectChalNonAux defTargets chal d.type visitedAux
+          collectChalNonAux defTargets chal d.value visitedAux
+        else
+          addNonAux n
+          return visitedAux
       | _ => addNonAux n; return visitedAux
     else
       addNonAux n
@@ -94,8 +98,12 @@ partial def collectChalNonAux (defTargets : Std.HashSet Name) (chal : Export.Exp
   different subsets of local hypotheses) are paired by matching their universe- and argument-
   instantiated types (sound by proof irrelevance; the solution theorem and arguments are still
   axiom- and kernel-checked).
-- Safe single internal auxiliary definitions (`.defnInfo`, such as `.match_N`) are paired by
-  matching both their universe-instantiated types and bodies (sound by kernel delta-reduction).
+- Safe internal auxiliary definitions (`.defnInfo`, such as `.match_N`) are paired by matching both
+  their universe-instantiated types and bodies (sound by kernel delta-reduction; `DefinitionVal.all`
+  is intentionally not restricted to `[d.name]` because metaprograms like Mathlib's `@[to_dual]` and
+  `@[to_additive]` copy matcher definitions without rewriting `all`, while `visiting` forbids cycles
+  on either side). Non-safe internal `.defnInfo`s (`partial`/`unsafe`) must match by exact name and
+  are delegated to `Compare.loop`.
 All matched non-auxiliary constants (including projection structure names) are recorded in
 `nonAuxConsts` for `Compare.loop`. -/
 partial def matchExpr (defTargets : Std.HashSet Name) (chal sol : Export.ExportedEnv)
@@ -106,7 +114,7 @@ partial def matchExpr (defTargets : Std.HashSet Name) (chal sol : Export.Exporte
     let some (c1, ls1, args1) := thmApp1 | failure
     let some (c2, ls2, args2) := thmApp2 | failure
     let key := ((c1.name, ls1), (c2.name, ls2))
-    guard (!(← get).visiting.contains (c1.name, c2.name))
+    guard (!(← get).visiting.any fun (a, b) => a == c1.name || b == c2.name)
     let c1TypeInst := c1.type.instantiateLevelParams c1.levelParams ls1
     let c2TypeInst := c2.type.instantiateLevelParams c2.levelParams ls2
     let directMatch : MatchM Unit := do
@@ -166,23 +174,25 @@ partial def matchExpr (defTargets : Std.HashSet Name) (chal sol : Export.Exporte
       guard (isAux1 && isAux2)
       match chal.constMap[n1]?, sol.constMap[n2]? with
       | some (.defnInfo d1), some (.defnInfo d2) =>
-        let key := ((n1, ls1), (n2, ls2))
-        if (← get).verifiedPairs.contains key then return ()
-        guard (!(← get).visiting.contains (n1, n2))
-        guard (d1.safety == .safe && d2.safety == .safe)
-        guard (d1.all == [d1.name] && d2.all == [d2.name])
-        guard (ls1.length == d1.levelParams.length && ls2.length == d2.levelParams.length)
-        modify fun s => { s with visiting := s.visiting.insert (n1, n2) }
-        matchExpr defTargets chal sol
-          (d1.type.instantiateLevelParams d1.levelParams ls1)
-          (d2.type.instantiateLevelParams d2.levelParams ls2) #[]
-        matchExpr defTargets chal sol
-          (d1.value.instantiateLevelParams d1.levelParams ls1)
-          (d2.value.instantiateLevelParams d2.levelParams ls2) #[]
-        modify fun s => { s with
-          visiting := s.visiting.erase (n1, n2)
-          verifiedPairs := s.verifiedPairs.insert key
-        }
+        if d1.safety == .safe && d2.safety == .safe then
+          let key := ((n1, ls1), (n2, ls2))
+          if (← get).verifiedPairs.contains key then return ()
+          guard (!(← get).visiting.any fun (a, b) => a == n1 || b == n2)
+          guard (ls1.length == d1.levelParams.length && ls2.length == d2.levelParams.length)
+          modify fun s => { s with visiting := s.visiting.insert (n1, n2) }
+          matchExpr defTargets chal sol
+            (d1.type.instantiateLevelParams d1.levelParams ls1)
+            (d2.type.instantiateLevelParams d2.levelParams ls2) #[]
+          matchExpr defTargets chal sol
+            (d1.value.instantiateLevelParams d1.levelParams ls1)
+            (d2.value.instantiateLevelParams d2.levelParams ls2) #[]
+          modify fun s => { s with
+            visiting := s.visiting.erase (n1, n2)
+            verifiedPairs := s.verifiedPairs.insert key
+          }
+        else
+          guard (n1 == n2 && ls1 == ls2 && d1.safety == d2.safety)
+          addNonAux n1
       | some (.thmInfo _), _ | _, some (.thmInfo _)
       | some (.defnInfo _), _ | _, some (.defnInfo _) => failure
       | _, _ =>
@@ -220,7 +230,7 @@ partial def inferDisproofLevels (defTargets : Std.HashSet Name) (chal sol : Expo
     (visiting : Std.HashSet (Name × Name) := {}) : List (Name × Level) :=
   match auxThmApp? defTargets chal e1, auxThmApp? defTargets sol e2 with
   | some (c1, ls1, args1), some (c2, ls2, args2) =>
-    if visiting.contains (c1.name, c2.name) then subst
+    if visiting.any fun (a, b) => a == c1.name || b == c2.name then subst
     else
       let visiting' := visiting.insert (c1.name, c2.name)
       let c1TypeInst := c1.type.instantiateLevelParams c1.levelParams ls1
@@ -242,17 +252,20 @@ partial def inferDisproofLevels (defTargets : Std.HashSet Name) (chal sol : Expo
       let isAux1 := isAuxName defTargets n1
       let isAux2 := isAuxName defTargets n2
       if isAux1 || isAux2 then
-        if isAux1 && isAux2 && !visiting.contains (n1, n2) then
+        if isAux1 && isAux2 && !(visiting.any fun (a, b) => a == n1 || b == n2) then
           let visiting' := visiting.insert (n1, n2)
           match chal.constMap[n1]?, sol.constMap[n2]? with
           | some (.defnInfo d1), some (.defnInfo d2) =>
-            if ls1.length == d1.levelParams.length && ls2.length == d2.levelParams.length then
+            if d1.safety == .safe && d2.safety == .safe
+                && ls1.length == d1.levelParams.length && ls2.length == d2.levelParams.length then
               let subst := inferDisproofLevels defTargets chal sol chalLevels
                 (d1.type.instantiateLevelParams d1.levelParams ls1)
                 (d2.type.instantiateLevelParams d2.levelParams ls2) subst visiting'
               inferDisproofLevels defTargets chal sol chalLevels
                 (d1.value.instantiateLevelParams d1.levelParams ls1)
                 (d2.value.instantiateLevelParams d2.levelParams ls2) subst visiting'
+            else if n1 == n2 && ls1.length == ls2.length then
+              (ls1.zip ls2).foldl (fun acc (l1, l2) => matchLevel l1 l2 chalLevels acc) subst
             else subst
           | _, _ =>
             if n1 == n2 && ls1.length == ls2.length then

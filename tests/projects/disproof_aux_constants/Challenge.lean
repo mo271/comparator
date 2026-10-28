@@ -11,6 +11,8 @@ internal auxiliary constants (`_proof_N`, `match_N`):
    that collapse into a single reused matcher in `Solution` when disproven at `u = 0`.
 6. `direct_proof_helper_matcher`: direct proof (not `.disproof`) where an earlier `private` helper
    in `Solution.lean` caches `.match_1` first.
+7. `mutual_all_aux_disproof`: helper referencing a safe internal `.defnInfo` with `d.all != [d.name]`
+   (mirroring Mathlib's `@[to_dual]` / `@[to_additive]` copied matchers such as `WithTop.untop.match_1`).
 -/
 
 universe u v
@@ -48,4 +50,20 @@ theorem ulift_matcher_collapse (p : ULift.{u} Nat × Nat) (q : ULift.{0} Nat × 
 -- 6. Direct proof where an earlier `private` helper in `Solution` caches `.match_1`
 theorem direct_proof_helper_matcher (p : Bool × Bool) :
     (let (a, b) := p; a == b) = (p.1 == p.2) := by
+  sorry
+
+-- 7. Helper referencing a safe internal `.defnInfo` with `d.all != [d.name]`
+mutual
+  def dualAux.match_1 : Nat → Nat
+    | 0 => 0
+    | n + 1 => dualAux.match_2 n
+  def dualAux.match_2 : Nat → Nat
+    | 0 => 1
+    | n + 1 => dualAux.match_1 n
+end
+
+def useDualAux (n : Nat) : Nat := dualAux.match_1 n
+
+theorem mutual_all_aux_disproof (n : Nat) :
+    useDualAux n = 1 := by
   sorry
